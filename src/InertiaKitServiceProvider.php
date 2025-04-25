@@ -1,24 +1,37 @@
 <?php
 
-public function boot()
+namespace JoshCirre\InertiaKit;
+
+use Illuminate\Support\ServiceProvider;
+use JoshCirre\InertiaKit\Console\GenerateInertiaKitRoutes;
+use JoshCirre\InertiaKit\Console\GenerateModelTypes;
+use JoshCirre\InertiaKit\Console\GeneratePagePropTypes;
+
+class InertiaKitServiceProvider extends ServiceProvider
 {
-    // 1) publish config
-    $this->publishes([
-      __DIR__.'/config/inertiakit.php' => config_path('inertiakit.php'),
-    ], 'config');
+    /**
+     * Bootstrap any package services.
+     */
+    public function boot(): void
+    {
+        // Publish config file
+        $this->publishes([
+            __DIR__.'/config/inertiakit.php' => config_path('inertiakit.php'),
+        ], 'config');
 
-    // 2) merge config so defaults apply
-    $this->mergeConfigFrom(
-      __DIR__.'/config/inertiakit.php',
-      'inertiakit'
-    );
+        // Only register commands when running in the console
+        if ($this->app->runningInConsole()) {
+            $this->commands([
+                GenerateInertiaKitRoutes::class,
+                GenerateModelTypes::class,
+                GeneratePagePropTypes::class,
+            ]);
+        }
 
-    // 3) register your three commands
-    if ($this->app->runningInConsole()) {
-        $this->commands([
-            Console\GenerateInertiaKitRoutes::class,
-            Console\GenerateModelTypes::class,
-            Console\GeneratePagePropTypes::class,
-        ]);
+        // Merge default config
+        $this->mergeConfigFrom(
+            __DIR__.'/config/inertiakit.php',
+            'inertiakit'
+        );
     }
 }
