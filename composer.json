@@ -1,5 +1,5 @@
 {
-    "name": "joshcirre/inertia-kit",
+    "name": "joshcirre/inertiakit",
     "description": "File-based Inertia routing, simplified server controllers + typed models & props",
     "type": "library",
     "keywords": [
