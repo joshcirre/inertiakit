@@ -37,7 +37,7 @@ class InstallInertiaKit extends Command
 
     protected function injectVitePlugin(): void
     {
-        // 1) Determine which file we should target
+        // Choose ts or js
         $tsFile = base_path('vite.config.ts');
         $jsFile = base_path('vite.config.js');
         if (File::exists($tsFile)) {
@@ -45,63 +45,77 @@ class InstallInertiaKit extends Command
         } elseif (File::exists($jsFile)) {
             $viteFile = $jsFile;
         } else {
-            // neither exists: publish stub to vite.config.js
-            $stub     = base_path('vendor/joshcirre/inertia-kit/stubs/vite.config.js.stub');
+            // No config: publish the full stub as js
+            $stub = base_path('vendor/joshcirre/inertia-kit/stubs/vite.config.js.stub');
             if (File::exists($stub)) {
                 File::copy($stub, $jsFile);
-                $this->info("✅ Published vite.config.js stub with InertiaKit plugin.");
+                $this->info('✅ Published vite.config.js stub');
             } else {
-                $this->warn("Vite stub not found at {$stub}. Install manually.");
+                $this->warn("No vite.config.* found, and stub is missing at {$stub}");
             }
+
             return;
         }
 
-        // 2) Read existing config
-        $contents = File::get($viteFile);
+        $lines = explode("\n", File::get($viteFile));
+        $out = [];
+        $inImports = true;
+        $haveRunImport = false;
+        $inPlugins = false;
 
-        // 3) Ensure `run` import
-        if (! str_contains($contents, "from 'vite-plugin-run'")) {
-            // Insert after last import line
-            $contents = preg_replace(
-                '/(import .+?;\\s*)(?!import)/s',
-                "$1\nimport { run } from 'vite-plugin-run';\n\n",
-                $contents,
-                1
-            );
-            $this->info("✅ Added `import { run } from 'vite-plugin-run';` to {$viteFile}");
-        }
+        // Prepare the plugin snippet lines
+        $snippet = [
+            '        run([',
+            '            {',
+            "                name: 'inertiakit',",
+            "                run: ['php', 'artisan', 'inertiakit:generate'],",
+            "                pattern: ['resources/js/**/*.tsx', 'resources/js/**/*.server.php', 'app/**/Models/**/*.php'],",
+            '            },',
+            '        ]),',
+        ];
 
-        // 4) Prepare our plugin snippet
-        $snippet = <<<'JS'
-            run([
-                {
-                    name: 'inertiakit',
-                    run: ['php', 'artisan', 'inertiakit:generate'],
-                    pattern: ['resources/js/**/*.tsx', 'resources/js/**/*.server.php', 'app/**/Models/**/*.php'],
-                },
-            ]),
-    JS;
+        foreach ($lines as $line) {
+            // 1) Import { run } if necessary, right after imports
+            if ($inImports && preg_match('/^import .+;/', $line)) {
+                $out[] = $line;
 
-        // 5) Inject into plugins array
-        if (preg_match('/plugins\s*:\s*\[\s*([\s\S]*?)\]/m', $contents)) {
-            if (! str_contains($contents, 'inertiakit:generate')) {
-                $contents = preg_replace_callback(
-                    '/plugins\s*:\s*\[\s*([\s\S]*?)\s*\]/m',
-                    function ($m) use ($snippet) {
-                        $inner = rtrim($m[1]);
-                        return "plugins: [\n{$inner}\n{$snippet}\n]";
-                    },
-                    $contents,
-                    1
-                );
-                File::put($viteFile, $contents);
-                $this->info("✅ Injected inertiaKIT run(...) into `plugins` of {$viteFile}");
-            } else {
-                $this->info("⬢ inertiaKIT plugin already in `plugins` of {$viteFile}`");
+                continue;
             }
-        } else {
-            $this->warn("Could not locate `plugins: [ … ]` in {$viteFile}; please add:\n\n{$snippet}");
+            if ($inImports) {
+                // first non-import line
+                if (! str_contains(implode("\n", $out), "from 'vite-plugin-run'")) {
+                    $out[] = "import { run } from 'vite-plugin-run';";
+                    $haveRunImport = true;
+                    $this->info("✅ Added `import { run } from 'vite-plugin-run'`");
+                }
+                $inImports = false;
+            }
+
+            // 2) Detect start of plugins array
+            if (preg_match('/plugins\s*:\s*\[/', $line)) {
+                $inPlugins = true;
+                $out[] = $line;
+
+                continue;
+            }
+
+            // 3) If we're in the plugins block and this line closes it, inject snippet first
+            if ($inPlugins && preg_match('/^\s*\],/', $line)) {
+                // inject the snippet
+                foreach ($snippet as $snipLine) {
+                    $out[] = $snipLine;
+                }
+                $inPlugins = false;
+            }
+
+            // 4) Always append the original line
+            $out[] = $line;
         }
+
+        // 5) Save back
+        File::put($viteFile, implode("\n", $out));
+        $this->info("✅ Injected inertiaKIT run(...) into plugins array of {$viteFile}");
+        $this->line('👉 Don’t forget to install: npm i -D chokidar-cli concurrently vite-plugin-run');
     }
 
     protected function installNpmDependencies(): void

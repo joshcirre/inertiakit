@@ -293,30 +293,28 @@ class GenerateInertiaKitRoutes extends Command
 
     protected function injectRoutesRequire(): void
     {
+        // 1) Build the require-statement for whatever routes_file you’ve configured
+        $routeFile = Config::get('inertiakit.routes_file', 'routes/inertiakit.php');
         $webRoutes = base_path('routes/web.php');
-        $require = "require __DIR__.'/inertiakit.php';";
+        $require = "require __DIR__.'/".basename($routeFile)."';";
 
+        // 2) Bail if file doesn’t exist
         if (! File::exists($webRoutes)) {
-            $this->warn("routes/web.php not found. Please add:\n\n    {$require}\n manually.");
+            $this->warn("routes/web.php not found. Please add manually:\n\n    {$require}\n");
 
             return;
         }
 
+        // 3) Only append if it’s not already there
         $contents = File::get($webRoutes);
         if (str_contains($contents, $require)) {
-            $this->info('⬢ routes/web.php already includes inertiakit.php');
+            $this->info('✅ routes/web.php already includes your InertiaKit routes');
 
             return;
         }
 
-        // Insert right after <?php
-        $newContents = preg_replace(
-            '/^<\?php\s*/',
-            "<?php\n\n{$require}\n\n",
-            $contents
-        );
-
-        File::put($webRoutes, $newContents);
-        $this->info('✅ Injected route require into routes/web.php');
+        // 4) Append to the end of the file
+        File::append($webRoutes, "\n\n{$require}\n");
+        $this->info('✅ Appended `'.trim($require).'` to routes/web.php');
     }
 }
