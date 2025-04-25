@@ -7,8 +7,6 @@ use JoshCirre\InertiaKit\Console\GenerateInertiaKitRoutes;
 use JoshCirre\InertiaKit\Console\GenerateModelTypes;
 use JoshCirre\InertiaKit\Console\GeneratePagePropTypes;
 use JoshCirre\InertiaKit\Console\InstallInertiaKit;
-use Symfony\Component\Process\Process;
-use Symfony\Component\Process\Exception\ProcessFailedException;
 
 class InertiaKitServiceProvider extends ServiceProvider
 {

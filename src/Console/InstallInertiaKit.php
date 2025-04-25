@@ -4,12 +4,13 @@ namespace JoshCirre\InertiaKit\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Symfony\Component\Process\Process;
 use Symfony\Component\Process\Exception\ProcessFailedException;
+use Symfony\Component\Process\Process;
 
 class InstallInertiaKit extends Command
 {
     protected $signature = 'inertiakit:install';
+
     protected $description = 'Publish config, wire Vite stub, register InertiaKit routes, and run initial generators';
 
     public function handle()
@@ -17,8 +18,8 @@ class InstallInertiaKit extends Command
         // 1) Publish the package config
         $this->info('📦 Publishing InertiaKit config...');
         $this->call('vendor:publish', [
-            '--provider' => "JoshCirre\\InertiaKit\\InertiaKitServiceProvider",
-            '--tag'      => 'config',
+            '--provider' => 'JoshCirre\\InertiaKit\\InertiaKitServiceProvider',
+            '--tag' => 'config',
         ]);
 
         // 2) Ensure routes/web.php requires the generated routes file
@@ -40,16 +41,18 @@ class InstallInertiaKit extends Command
     protected function injectRoutesRequire(): void
     {
         $webRoutes = base_path('routes/web.php');
-        $require   = "require __DIR__.'/inertiakit.php';";
+        $require = "require __DIR__.'/inertiakit.php';";
 
         if (! File::exists($webRoutes)) {
             $this->warn("routes/web.php not found. Please add:\n\n    {$require}\n manually.");
+
             return;
         }
 
         $contents = File::get($webRoutes);
         if (str_contains($contents, $require)) {
             $this->info('⬢ routes/web.php already includes inertiakit.php');
+
             return;
         }
 
@@ -66,30 +69,66 @@ class InstallInertiaKit extends Command
 
     protected function injectVitePlugin(): void
     {
-        $stubPath  = base_path('vendor/joshcirre/inertiakit/stubs/vite-plugin.stub.js');
-        $viteFile  = base_path('vite.config.js');
+        $viteFile = base_path('vite.config.js');
 
-        if (! File::exists($stubPath)) {
-            $this->warn("Vite stub not found at {$stubPath}. Skipping Vite integration.");
+        if (! File::exists($viteFile)) {
+            $this->warn('vite.config.js not found; skipping Vite integration.');
+
             return;
         }
 
-        $stub = File::get($stubPath);
+        $contents = File::get($viteFile);
 
-        if (! File::exists($viteFile)) {
-            File::put($viteFile, $stub);
-            $this->info("✅ Published new vite.config.js stub with InertiaKit plugin.");
+        // 1) Inject the `run` import if it doesn't already exist
+        if (! str_contains($contents, "from 'vite-plugin-run'")) {
+            // Find the last `import ...` line
+            $contents = preg_replace(
+                '/(import .+?;\s*)(?!import)/s',
+                "$1\nimport { run } from 'vite-plugin-run';\n\n",
+                $contents,
+                1
+            );
+            $this->info("✅ Added `import { run } from 'vite-plugin-run';`");
         } else {
-            $contents = File::get($viteFile);
-            if (str_contains($contents, 'inertiakit')) {
-                $this->info('⬢ vite.config.js already includes inertiaKIT plugin stub');
-            } else {
-                File::append($viteFile, "\n\n" . $stub);
-                $this->info('✅ Appended inertiaKIT plugin stub to vite.config.js');
-            }
+            $this->info('⬢ `run` import already present');
         }
 
-        $this->line('👉 Remember to install the npm watcher deps:');
+        // 2) Prepare our run-plugin snippet
+        $snippet = <<<'JS'
+            run([
+                {
+                    name: 'inertiakit',
+                    run: ['php', 'artisan', 'inertiakit:generate'],
+                    pattern: ['resources/js/**/*.tsx', 'resources/js/**/*.server.php', 'app/**/Models/**/*.php'],
+                },
+            ]),
+    JS;
+
+        // 3) Inject into the plugins array
+        // This regex finds `plugins: [ ... ]` and inserts our snippet before the closing ]
+        if (preg_match('/plugins\s*:\s*\[\s*([\s\S]*?)\]/m', $contents)) {
+            if (! str_contains($contents, 'inertiakit:generate')) {
+                $contents = preg_replace_callback(
+                    '/plugins\s*:\s*\[\s*([\s\S]*?)\s*\]/m',
+                    function ($m) use ($snippet) {
+                        // $m[1] is what's already inside the plugins [ ... ]
+                        $inner = rtrim($m[1]);
+
+                        return "plugins: [\n{$inner}\n{$snippet}\n]";
+                    },
+                    $contents,
+                    1
+                );
+                File::put($viteFile, $contents);
+                $this->info('✅ Injected inertiaKIT run(...) into `plugins` array');
+            } else {
+                $this->info('⬢ inertiaKIT plugin already in `plugins`');
+            }
+        } else {
+            $this->warn("Could not find `plugins: [ ... ]` in vite.config.js; please add:\n\n{$snippet}");
+        }
+
+        $this->line('👉 Don’t forget to install npm watcher deps if you haven’t already:');
         $this->line('   npm install --save-dev chokidar-cli concurrently vite-plugin-run');
     }
 
