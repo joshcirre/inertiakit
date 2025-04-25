@@ -21,14 +21,12 @@ It auto-generates:
 
 1. **Require the package**
    ```bash
-   composer require joshcirre/inertia-kit:^0.0.5-alpha
+   composer require joshcirre/inertia-kit:^0.0.7-alpha
    ```
 
-2. **Publish your config**
+2. **Install the package**
    ```bash
-   php artisan vendor:publish \
-     --provider="JoshCirre\InertiaKit\InertiaKitServiceProvider" \
-     --tag=config
+   php artisan inertiakit:install
    ```
 
 3. _(Optional but recommended)_ **Install Laravel Wayfinder** for zero-config route-action types:
@@ -82,7 +80,7 @@ php artisan inertiakit:page-types
 
 ## 🔄 Automatic Re-generation with Vite
 
-For seamless DX, you can hook up a file watcher in your `vite.config.js`. First, install helpers:
+For seamless DX, you can hook up a file watcher in your `vite.config.js`. (this is done automatically when you run `inertiakit:install`)
 
 ```bash
 npm install -D vite-plugin-run

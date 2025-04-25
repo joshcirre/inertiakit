@@ -4,15 +4,13 @@ namespace JoshCirre\InertiaKit\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use Symfony\Component\Process\Process;
+use Symfony\Component\Process\Exception\ProcessFailedException;
 
 class InstallInertiaKit extends Command
 {
     protected $signature = 'inertiakit:install';
-
     protected $description = 'Publish config, wire Vite stub, register InertiaKit routes, and run initial generators';
-
-    protected $signature   = 'inertiakit:install';
-    protected $description = 'Publish config, wire Vite stub, register routes, and run initial generators';
 
     public function handle()
     {
