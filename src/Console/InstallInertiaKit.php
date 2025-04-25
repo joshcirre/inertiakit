@@ -37,73 +37,71 @@ class InstallInertiaKit extends Command
 
     protected function injectVitePlugin(): void
     {
-        $viteFile = base_path('vite.config.js');
-
-        if (! File::exists($viteFile)) {
-            $this->warn('vite.config.js not found; skipping Vite integration.');
-
+        // 1) Determine which file we should target
+        $tsFile = base_path('vite.config.ts');
+        $jsFile = base_path('vite.config.js');
+        if (File::exists($tsFile)) {
+            $viteFile = $tsFile;
+        } elseif (File::exists($jsFile)) {
+            $viteFile = $jsFile;
+        } else {
+            // neither exists: publish stub to vite.config.js
+            $stub     = base_path('vendor/joshcirre/inertia-kit/stubs/vite.config.js.stub');
+            if (File::exists($stub)) {
+                File::copy($stub, $jsFile);
+                $this->info("✅ Published vite.config.js stub with InertiaKit plugin.");
+            } else {
+                $this->warn("Vite stub not found at {$stub}. Install manually.");
+            }
             return;
         }
 
+        // 2) Read existing config
         $contents = File::get($viteFile);
 
-        // 1) Inject the `run` import if it doesn't already exist
+        // 3) Ensure `run` import
         if (! str_contains($contents, "from 'vite-plugin-run'")) {
-            // Find the last `import ...` line
+            // Insert after last import line
             $contents = preg_replace(
-                '/(import .+?;\s*)(?!import)/s',
+                '/(import .+?;\\s*)(?!import)/s',
                 "$1\nimport { run } from 'vite-plugin-run';\n\n",
                 $contents,
                 1
             );
-            $this->info("✅ Added `import { run } from 'vite-plugin-run';`");
-        } else {
-            $this->info('⬢ `run` import already present');
+            $this->info("✅ Added `import { run } from 'vite-plugin-run';` to {$viteFile}");
         }
 
-        // 2) Prepare our run-plugin snippet
+        // 4) Prepare our plugin snippet
         $snippet = <<<'JS'
             run([
                 {
                     name: 'inertiakit',
                     run: ['php', 'artisan', 'inertiakit:generate'],
-                    pattern: [
-                    'resources/js/**/*.tsx',
-                    'resources/js/**/*.vue',
-                    'resources/js/**/*.svelte',
-                    'resources/js/**/*.server.php',
-                    'app/**/Models/**/*.php',
-                    ],
+                    pattern: ['resources/js/**/*.tsx', 'resources/js/**/*.server.php', 'app/**/Models/**/*.php'],
                 },
             ]),
     JS;
 
-        // 3) Inject into the plugins array
-        // This regex finds `plugins: [ ... ]` and inserts our snippet before the closing ]
+        // 5) Inject into plugins array
         if (preg_match('/plugins\s*:\s*\[\s*([\s\S]*?)\]/m', $contents)) {
             if (! str_contains($contents, 'inertiakit:generate')) {
                 $contents = preg_replace_callback(
                     '/plugins\s*:\s*\[\s*([\s\S]*?)\s*\]/m',
                     function ($m) use ($snippet) {
-                        // $m[1] is what's already inside the plugins [ ... ]
                         $inner = rtrim($m[1]);
-
                         return "plugins: [\n{$inner}\n{$snippet}\n]";
                     },
                     $contents,
                     1
                 );
                 File::put($viteFile, $contents);
-                $this->info('✅ Injected inertiaKIT run(...) into `plugins` array');
+                $this->info("✅ Injected inertiaKIT run(...) into `plugins` of {$viteFile}");
             } else {
-                $this->info('⬢ inertiaKIT plugin already in `plugins`');
+                $this->info("⬢ inertiaKIT plugin already in `plugins` of {$viteFile}`");
             }
         } else {
-            $this->warn("Could not find `plugins: [ ... ]` in vite.config.js; please add:\n\n{$snippet}");
+            $this->warn("Could not locate `plugins: [ … ]` in {$viteFile}; please add:\n\n{$snippet}");
         }
-
-        $this->line('👉 Don’t forget to install npm watcher deps if you haven’t already:');
-        $this->line('   npm install --save-dev chokidar-cli concurrently vite-plugin-run');
     }
 
     protected function installNpmDependencies(): void
