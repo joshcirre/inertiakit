@@ -23,6 +23,7 @@ class GenerateInertiaKitRoutes extends Command
         $routesFile = base_path(
             Config::get('inertiakit.routes_file', 'routes/inertiakit.php')
         );
+
         $ignorePatterns = Config::get('inertiakit.ignore', []);
 
         $genCtrlDir = app_path('Http/Controllers/Generated/Pages');
@@ -288,5 +289,34 @@ class GenerateInertiaKitRoutes extends Command
         $this->call('inertiakit:model-types');
 
         $this->info('All done!');
+    }
+
+    protected function injectRoutesRequire(): void
+    {
+        $webRoutes = base_path('routes/web.php');
+        $require = "require __DIR__.'/inertiakit.php';";
+
+        if (! File::exists($webRoutes)) {
+            $this->warn("routes/web.php not found. Please add:\n\n    {$require}\n manually.");
+
+            return;
+        }
+
+        $contents = File::get($webRoutes);
+        if (str_contains($contents, $require)) {
+            $this->info('⬢ routes/web.php already includes inertiakit.php');
+
+            return;
+        }
+
+        // Insert right after <?php
+        $newContents = preg_replace(
+            '/^<\?php\s*/',
+            "<?php\n\n{$require}\n\n",
+            $contents
+        );
+
+        File::put($webRoutes, $newContents);
+        $this->info('✅ Injected route require into routes/web.php');
     }
 }

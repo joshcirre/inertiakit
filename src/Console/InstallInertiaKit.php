@@ -15,20 +15,17 @@ class InstallInertiaKit extends Command
 
     public function handle()
     {
-        // 1) Publish the package config
+        // Publish the package config
         $this->info('📦 Publishing InertiaKit config...');
         $this->call('vendor:publish', [
             '--provider' => 'JoshCirre\\InertiaKit\\InertiaKitServiceProvider',
             '--tag' => 'config',
         ]);
 
-        // 2) Ensure routes/web.php requires the generated routes file
-        $this->injectRoutesRequire();
-
-        // 3) Wire up the Vite plugin stub
+        // Wire up the Vite plugin stub
         $this->injectVitePlugin();
 
-        // 4) Run the generators
+        // Run the generators
         $this->info('⚙️  Running initial InertiaKit generators…');
         $this->call('inertiakit:generate');
 
@@ -36,35 +33,6 @@ class InstallInertiaKit extends Command
         $this->installNpmDependencies();
 
         $this->info('🎉 inertiaKIT installation complete!');
-    }
-
-    protected function injectRoutesRequire(): void
-    {
-        $webRoutes = base_path('routes/web.php');
-        $require = "require __DIR__.'/inertiakit.php';";
-
-        if (! File::exists($webRoutes)) {
-            $this->warn("routes/web.php not found. Please add:\n\n    {$require}\n manually.");
-
-            return;
-        }
-
-        $contents = File::get($webRoutes);
-        if (str_contains($contents, $require)) {
-            $this->info('⬢ routes/web.php already includes inertiakit.php');
-
-            return;
-        }
-
-        // Insert right after <?php
-        $newContents = preg_replace(
-            '/^<\?php\s*/',
-            "<?php\n\n{$require}\n\n",
-            $contents
-        );
-
-        File::put($webRoutes, $newContents);
-        $this->info('✅ Injected route require into routes/web.php');
     }
 
     protected function injectVitePlugin(): void
@@ -99,7 +67,13 @@ class InstallInertiaKit extends Command
                 {
                     name: 'inertiakit',
                     run: ['php', 'artisan', 'inertiakit:generate'],
-                    pattern: ['resources/js/**/*.tsx', 'resources/js/**/*.server.php', 'app/**/Models/**/*.php'],
+                    pattern: [
+                    'resources/js/**/*.tsx',
+                    'resources/js/**/*.vue',
+                    'resources/js/**/*.svelte',
+                    'resources/js/**/*.server.php',
+                    'app/**/Models/**/*.php',
+                    ],
                 },
             ]),
     JS;
