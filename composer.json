@@ -1,16 +1,25 @@
 {
-    "name": "nunomaduro/skeleton-php",
-    "description": "A skeleton repository for my packages",
-    "keywords": ["php", "skeleton", "package"],
+    "name": "joshcirre/inertia-kit",
+    "description": "File-based Inertia routing, simplified server controllers + typed models & props",
+    "type": "library",
+    "keywords": [
+        "php",
+        "skeleton",
+        "package"
+    ],
     "license": "MIT",
     "authors": [
         {
-            "name": "Nuno Maduro",
-            "email": "enunomaduro@gmail.com"
+            "name": "Josh Cirre",
+            "email": "joshcirre@gmail.com"
         }
     ],
     "require": {
-        "php": "^8.3.0"
+        "php": "^8.1",
+        "illuminate/support": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/console": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/database": "^9.0|^10.0|^11.0|^12.0",
+        "inertiajs/inertia-laravel": "^0.6 || ^1.0"
     },
     "require-dev": {
         "laravel/pint": "^1.18.1",
@@ -22,7 +31,7 @@
     },
     "autoload": {
         "psr-4": {
-            "NunoMaduro\\SkeletonPhp\\": "src/"
+            "JoshCirre\\InertiaKit\\": "src/"
         }
     },
     "autoload-dev": {
@@ -37,6 +46,13 @@
         "preferred-install": "dist",
         "allow-plugins": {
             "pestphp/pest-plugin": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "JoshCirre\\InertiaKit\\InertiaKitServiceProvider"
+            ]
         }
     },
     "scripts": {
