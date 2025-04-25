@@ -16,7 +16,7 @@ class InertiaKitServiceProvider extends ServiceProvider
     {
         // Publish config file
         $this->publishes([
-            __DIR__.'/config/inertiakit.php' => config_path('inertiakit.php'),
+            __DIR__.'/../config/inertiakit.php' => config_path('inertiakit.php'),
         ], 'config');
 
         // Only register commands when running in the console
@@ -30,7 +30,7 @@ class InertiaKitServiceProvider extends ServiceProvider
 
         // Merge default config
         $this->mergeConfigFrom(
-            __DIR__.'/config/inertiakit.php',
+            __DIR__.'/../config/inertiakit.php',
             'inertiakit'
         );
     }
