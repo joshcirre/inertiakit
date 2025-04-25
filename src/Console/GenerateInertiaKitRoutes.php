@@ -19,6 +19,8 @@ class GenerateInertiaKitRoutes extends Command
 
     public function handle()
     {
+        $this->injectRoutesRequire();
+
         $pagesDir = resource_path('js/pages');
         $routesFile = base_path(
             Config::get('inertiakit.routes_file', 'routes/inertiakit.php')
