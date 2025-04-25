@@ -13,52 +13,52 @@ use ReflectionFunction;
 
 class GenerateInertiaKitRoutes extends Command
 {
-    protected $signature = "inertiakit:generate";
+    protected $signature = 'inertiakit:generate';
 
-    protected $description = "Regenerate routes/inertiakit.php and sync Generated/Page controllers";
+    protected $description = 'Regenerate routes/inertiakit.php and sync Generated/Page controllers';
 
     public function handle()
     {
-        $pagesDir = resource_path("js/pages");
+        $pagesDir = resource_path('js/pages');
         $routesFile = base_path(
-            Config::get("inertiakit.routes_file", "routes/inertiakit.php")
+            Config::get('inertiakit.routes_file', 'routes/inertiakit.php')
         );
-        $ignorePatterns = Config::get("inertiakit.ignore", []);
+        $ignorePatterns = Config::get('inertiakit.ignore', []);
 
-        $genCtrlDir = app_path("Http/Controllers/Generated/Pages");
+        $genCtrlDir = app_path('Http/Controllers/Generated/Pages');
         $reservedJS = [
-            "break",
-            "case",
-            "class",
-            "const",
-            "continue",
-            "debugger",
-            "default",
-            "delete",
-            "do",
-            "else",
-            "export",
-            "extends",
-            "finally",
-            "for",
-            "function",
-            "if",
-            "import",
-            "in",
-            "instanceof",
-            "let",
-            "new",
-            "return",
-            "super",
-            "switch",
-            "this",
-            "throw",
-            "try",
-            "typeof",
-            "var",
-            "void",
-            "while",
-            "with",
+            'break',
+            'case',
+            'class',
+            'const',
+            'continue',
+            'debugger',
+            'default',
+            'delete',
+            'do',
+            'else',
+            'export',
+            'extends',
+            'finally',
+            'for',
+            'function',
+            'if',
+            'import',
+            'in',
+            'instanceof',
+            'let',
+            'new',
+            'return',
+            'super',
+            'switch',
+            'this',
+            'throw',
+            'try',
+            'typeof',
+            'var',
+            'void',
+            'while',
+            'with',
         ];
 
         // 1) remove old inertia kit routes & clear cached routes
@@ -66,8 +66,8 @@ class GenerateInertiaKitRoutes extends Command
             File::delete($routesFile);
             $this->info("Deleted old {$routesFile}");
         }
-        Artisan::call("route:clear");
-        $this->info("Cleared route cache");
+        Artisan::call('route:clear');
+        $this->info('Cleared route cache');
 
         // 2) collect manual route names + URIs (now that inertia kit is gone)
         $existingNames = collect(Route::getRoutes())
@@ -75,7 +75,7 @@ class GenerateInertiaKitRoutes extends Command
             ->filter()
             ->all();
         $existingUris = collect(Route::getRoutes())
-            ->map(fn($r) => "/" . $r->uri())
+            ->map(fn ($r) => '/'.$r->uri())
             ->unique()
             ->all();
 
@@ -84,16 +84,16 @@ class GenerateInertiaKitRoutes extends Command
         foreach (File::allFiles($pagesDir) as $file) {
             $rel = Str::after(
                 $file->getRealPath(),
-                $pagesDir . DIRECTORY_SEPARATOR
+                $pagesDir.DIRECTORY_SEPARATOR
             );
             if (
-                $file->getExtension() === "php" &&
-                Str::endsWith($rel, ".server.php")
+                $file->getExtension() === 'php' &&
+                Str::endsWith($rel, '.server.php')
             ) {
-                $serverBases[] = Str::replaceLast(".server.php", "", $rel);
+                $serverBases[] = Str::replaceLast('.server.php', '', $rel);
             }
-            if ($file->getExtension() === "tsx") {
-                $tsxBases[] = Str::replaceLast(".tsx", "", $rel);
+            if ($file->getExtension() === 'tsx') {
+                $tsxBases[] = Str::replaceLast('.tsx', '', $rel);
             }
         }
         $allBases = array_unique(array_merge($serverBases, $tsxBases));
@@ -102,10 +102,10 @@ class GenerateInertiaKitRoutes extends Command
         if (File::isDirectory($genCtrlDir)) {
             foreach (File::files($genCtrlDir) as $f) {
                 $fileName = $f->getFilename(); // e.g. TodosIndexController.php
-                $classBase = Str::replaceLast("Controller.php", "", $fileName);
+                $classBase = Str::replaceLast('Controller.php', '', $fileName);
                 // map StudlyClass to path: snake with '/' delimiter
-                $basePath = Str::snake($classBase, "/"); // e.g. 'todos/index'
-                if (!in_array($basePath, $allBases, true)) {
+                $basePath = Str::snake($classBase, '/'); // e.g. 'todos/index'
+                if (! in_array($basePath, $allBases, true)) {
                     File::delete($f->getRealPath());
                     $this->info("Deleted stale controller: {$fileName}");
                 }
@@ -129,23 +129,23 @@ class GenerateInertiaKitRoutes extends Command
                 }
             }
 
-            $isIndex = end($parts) === "index";
+            $isIndex = end($parts) === 'index';
 
             // URI → drop 'index' at end
             $urlSegs = $parts;
             if ($isIndex) {
                 array_pop($urlSegs);
             }
-            $uri = "/" . implode("/", $urlSegs ?: [""]);
+            $uri = '/'.implode('/', $urlSegs ?: ['']);
 
             // routeName → keep 'index' so Wayfinder nests
             $nameSegs = array_map(
-                fn($p) => in_array($p, $reservedJS, true) ? "{$p}_" : $p,
+                fn ($p) => in_array($p, $reservedJS, true) ? "{$p}_" : $p,
                 $parts
             );
-            $routeName = implode(".", $nameSegs);
+            $routeName = implode('.', $nameSegs);
 
-            $component = str_replace(DIRECTORY_SEPARATOR, "/", $base);
+            $component = str_replace(DIRECTORY_SEPARATOR, '/', $base);
             $hasServer = in_array($base, $serverBases, true);
             $pageArr = $hasServer
                 ? require "{$pagesDir}/{$base}.server.php"
@@ -154,9 +154,9 @@ class GenerateInertiaKitRoutes extends Command
             //
             // ─── Controller stub ───
             //
-            $ns = "App\\Http\\Controllers\\Generated\\Pages";
-            $classBase = implode("_", $parts) ?: "Home";
-            $ctrlName = Str::studly($classBase) . "Controller";
+            $ns = 'App\\Http\\Controllers\\Generated\\Pages';
+            $classBase = implode('_', $parts) ?: 'Home';
+            $ctrlName = Str::studly($classBase).'Controller';
             $fullClass = "{$ns}\\{$ctrlName}";
 
             File::ensureDirectoryExists($genCtrlDir);
@@ -168,7 +168,7 @@ class GenerateInertiaKitRoutes extends Command
             $stub .= "use Inertia\\Inertia;\n";
             // import model classes
             foreach ($pageArr as $action => $fn) {
-                if ($action === "load" || !is_callable($fn)) {
+                if ($action === 'load' || ! is_callable($fn)) {
                     continue;
                 }
                 $ref = new ReflectionFunction($fn);
@@ -193,7 +193,7 @@ class GenerateInertiaKitRoutes extends Command
             $stub .= "        \$actions = [];\n";
             // only non-model actions
             foreach ($pageArr as $action => $fn) {
-                if ($action === "load" || !is_callable($fn)) {
+                if ($action === 'load' || ! is_callable($fn)) {
                     continue;
                 }
                 $ref = new ReflectionFunction($fn);
@@ -213,7 +213,7 @@ class GenerateInertiaKitRoutes extends Command
 
             // each action method
             foreach ($pageArr as $action => $fn) {
-                if ($action === "load" || !is_callable($fn)) {
+                if ($action === 'load' || ! is_callable($fn)) {
                     continue;
                 }
                 $ref = new ReflectionFunction($fn);
@@ -255,7 +255,7 @@ class GenerateInertiaKitRoutes extends Command
 
             // action routes
             foreach ($pageArr as $action => $fn) {
-                if ($action === "load" || !is_callable($fn)) {
+                if ($action === 'load' || ! is_callable($fn)) {
                     continue;
                 }
                 $ref = new ReflectionFunction($fn);
@@ -281,12 +281,12 @@ class GenerateInertiaKitRoutes extends Command
         $this->info("Generated InertiaKit routes at {$routesFile}");
 
         // 2) Kick off the two type‐generation commands
-        $this->info("→ Generating page-props types…");
-        $this->call("inertiakit:page-types");
+        $this->info('→ Generating page-props types…');
+        $this->call('inertiakit:page-types');
 
-        $this->info("→ Generating model types…");
-        $this->call("inertiakit:model-types");
+        $this->info('→ Generating model types…');
+        $this->call('inertiakit:model-types');
 
-        $this->info("All done!");
+        $this->info('All done!');
     }
 }

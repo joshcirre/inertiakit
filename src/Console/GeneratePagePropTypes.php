@@ -3,31 +3,33 @@
 namespace JoshCirre\InertiaKit\Console;
 
 use Illuminate\Console\Command;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use ReflectionClass; // Needed for checking if a class is a Model
-use Throwable; // Import Throwable
-use Symfony\Component\Console\Output\OutputInterface; // For verbosity levels
+use Symfony\Component\Console\Output\OutputInterface; // Import Throwable
+use Throwable; // For verbosity levels
 
 class GeneratePagePropTypes extends Command
 {
-    protected $signature = "inertiakit:page-types";
-    protected $description = "Generate TS interfaces for Inertia page props";
+    protected $signature = 'inertiakit:page-types';
+
+    protected $description = 'Generate TS interfaces for Inertia page props';
 
     public function handle()
     {
-        $pagesDir = resource_path("js/pages");
-        if (!File::isDirectory($pagesDir)) {
+        $pagesDir = resource_path('js/pages');
+        if (! File::isDirectory($pagesDir)) {
             $this->error("Pages directory not found: {$pagesDir}");
+
             return 1; // Indicate error
         }
         $files = File::allFiles($pagesDir);
 
         // Always import SharedData; model imports added dynamically
         $importsMeta = [
-            "SharedData" => "./index", // Adjust if your SharedData lives elsewhere
+            'SharedData' => './index', // Adjust if your SharedData lives elsewhere
         ];
 
         $interfaces = [];
@@ -35,8 +37,8 @@ class GeneratePagePropTypes extends Command
         foreach ($files as $file) {
             // Ensure we only process .server.php files
             if (
-                $file->getExtension() !== "php" ||
-                !Str::endsWith($file->getFilename(), ".server.php")
+                $file->getExtension() !== 'php' ||
+                ! Str::endsWith($file->getFilename(), '.server.php')
             ) {
                 continue;
             }
@@ -50,8 +52,8 @@ class GeneratePagePropTypes extends Command
 
             $relativeDir = Str::beforeLast($relativePath, DIRECTORY_SEPARATOR);
             $baseName = Str::replaceLast(
-                ".server.php",
-                "",
+                '.server.php',
+                '',
                 $file->getFilename()
             );
 
@@ -59,8 +61,8 @@ class GeneratePagePropTypes extends Command
             $segments = explode(DIRECTORY_SEPARATOR, $relativeDir);
             $segments[] = $baseName; // Add the base filename
             $pageClassName = implode(
-                "",
-                array_map(fn($s) => Str::studly($s), array_filter($segments))
+                '',
+                array_map(fn ($s) => Str::studly($s), array_filter($segments))
             ); // Filter empty segments if any
             $interfaceName = "{$pageClassName}Props";
 
@@ -73,46 +75,49 @@ class GeneratePagePropTypes extends Command
                 $page = $pageLoader($file->getRealPath());
             } catch (Throwable $e) {
                 $this->warn(
-                    "Skipping {$relativePath}: Failed to require file. Error: " .
+                    "Skipping {$relativePath}: Failed to require file. Error: ".
                         $e->getMessage()
                 );
+
                 continue;
             }
 
-            if (!is_array($page)) {
+            if (! is_array($page)) {
                 $this->warn(
                     "Skipping {$relativePath}: File did not return an array."
                 );
+
                 continue;
             }
 
-            if (!isset($page["load"]) || !is_callable($page["load"])) {
+            if (! isset($page['load']) || ! is_callable($page['load'])) {
                 $this->line(
                     "Skipping {$relativePath}: No callable 'load' key found.",
                     verbosity: OutputInterface::VERBOSITY_VERBOSE
                 );
+
                 continue;
             }
 
             // --- Get explicit types first (Optional but recommended) ---
-            $explicitTypes = $page["types"] ?? [];
+            $explicitTypes = $page['types'] ?? [];
             $meta = [];
             foreach ($explicitTypes as $key => $typeHint) {
                 $propName = Str::camel($key);
-                if (Str::endsWith($typeHint, "[]")) {
-                    $className = Str::beforeLast($typeHint, "[]");
+                if (Str::endsWith($typeHint, '[]')) {
+                    $className = Str::beforeLast($typeHint, '[]');
                     if (
                         class_exists($className) &&
                         is_subclass_of($className, Model::class)
                     ) {
                         $modelName = class_basename($className);
                         $meta[$propName] = "{$modelName}[]";
-                        $importsMeta[$modelName] = "./models"; // Adjust if models types are elsewhere
+                        $importsMeta[$modelName] = './models'; // Adjust if models types are elsewhere
                     } else {
                         $this->warn(
                             "Invalid model class in type hint '{$typeHint}' for key '{$key}' in {$relativePath}"
                         );
-                        $meta[$propName] = "any[]";
+                        $meta[$propName] = 'any[]';
                     }
                 } elseif (
                     class_exists($typeHint) &&
@@ -120,32 +125,34 @@ class GeneratePagePropTypes extends Command
                 ) {
                     $modelName = class_basename($typeHint);
                     $meta[$propName] = $modelName;
-                    $importsMeta[$modelName] = "./models"; // Adjust if models types are elsewhere
+                    $importsMeta[$modelName] = './models'; // Adjust if models types are elsewhere
                 } else {
                     $this->warn(
                         "Invalid model class in type hint '{$typeHint}' for key '{$key}' in {$relativePath}"
                     );
-                    $meta[$propName] = "any";
+                    $meta[$propName] = 'any';
                 }
             }
             // --- End explicit types ---
 
             try {
                 // Execute the load function to get props
-                $props = $page["load"]();
+                $props = $page['load']();
             } catch (Throwable $e) {
                 $this->warn(
-                    "Skipping {$relativePath}: load() threw " .
-                        get_class($e) .
-                        ": " .
+                    "Skipping {$relativePath}: load() threw ".
+                        get_class($e).
+                        ': '.
                         $e->getMessage()
                 );
+
                 continue;
             }
-            if (!is_array($props)) {
+            if (! is_array($props)) {
                 $this->warn(
                     "Skipping {$relativePath}: load() did not return an array"
                 );
+
                 continue;
             }
 
@@ -163,14 +170,14 @@ class GeneratePagePropTypes extends Command
                 if ($value instanceof Model) {
                     $modelName = class_basename(get_class($value));
                     $meta[$propName] = $modelName;
-                    $importsMeta[$modelName] = "./models";
+                    $importsMeta[$modelName] = './models';
                 } elseif ($value instanceof EloquentCollection) {
                     $first = $value->first();
                     if ($first instanceof Model) {
                         // Collection is not empty, direct detection works
                         $modelName = class_basename(get_class($first));
                         $meta[$propName] = "{$modelName}[]";
-                        $importsMeta[$modelName] = "./models";
+                        $importsMeta[$modelName] = './models';
                     } else {
                         // --- Heuristic for Empty Collections ---
                         // Try to guess based on prop name and used models
@@ -180,7 +187,7 @@ class GeneratePagePropTypes extends Command
                         if (isset($usedModels[$studlyKey])) {
                             $modelName = $studlyKey; // Use the base name found in use statements
                             $meta[$propName] = "{$modelName}[]";
-                            $importsMeta[$modelName] = "./models";
+                            $importsMeta[$modelName] = './models';
                             $this->line(
                                 "Inferred type '{$modelName}[]' for empty collection '{$key}' in {$relativePath} based on use statements.",
                                 verbosity: OutputInterface::VERBOSITY_VERBOSE
@@ -228,7 +235,7 @@ class GeneratePagePropTypes extends Command
                     if (
                         $originalValue instanceof EloquentCollection &&
                         $originalValue->isEmpty() &&
-                        !isset($meta[$propName])
+                        ! isset($meta[$propName])
                     ) {
                         $body .= "  {$propName}: any[]; // WARN: Could not infer type for empty collection\n";
                     } else {
@@ -244,8 +251,9 @@ class GeneratePagePropTypes extends Command
 
         if (empty($interfaces)) {
             $this->info(
-                "No page component server files found or processed. No types generated."
+                'No page component server files found or processed. No types generated.'
             );
+
             return 0;
         }
 
@@ -263,20 +271,21 @@ class GeneratePagePropTypes extends Command
         ksort($importsMeta);
         foreach ($importsMeta as $name => $path) {
             // Ensure path uses forward slashes for TS imports
-            $importPath = str_replace(DIRECTORY_SEPARATOR, "/", $path);
+            $importPath = str_replace(DIRECTORY_SEPARATOR, '/', $path);
             $output .= "import type { {$name} } from '{$importPath}';\n";
         }
         $output .= "\n";
 
         // Interfaces
-        $output .= implode("", $interfaces);
+        $output .= implode('', $interfaces);
 
         // Write to disk
-        $filePath = base_path("resources/js/types/page-props.d.ts"); // Standard location
+        $filePath = base_path('resources/js/types/page-props.d.ts'); // Standard location
         File::ensureDirectoryExists(dirname($filePath));
         File::put($filePath, $output);
 
         $this->info("Generated TypeScript interfaces to: {$filePath}");
+
         return 0; // Indicate success
     }
 
@@ -294,8 +303,10 @@ class GeneratePagePropTypes extends Command
             foreach ($value as $key => $subValue) {
                 $normalized[$key] = $this->normalizeForTsInference($subValue);
             }
+
             return $normalized;
         }
+
         // Return scalar values, null, etc. as is
         return $value;
     }
@@ -344,7 +355,7 @@ class GeneratePagePropTypes extends Command
                     } catch (Throwable $e) {
                         // Ignore reflection errors (e.g., class not found, though class_exists should prevent this)
                         $this->warn(
-                            "Reflection error for class {$fullClassName} in {$sourceFile}: " .
+                            "Reflection error for class {$fullClassName} in {$sourceFile}: ".
                                 $e->getMessage()
                         );
                     }
@@ -357,10 +368,11 @@ class GeneratePagePropTypes extends Command
             // Check for regex errors if matching fails completely
             if (preg_last_error() !== PREG_NO_ERROR) {
                 $this->error(
-                    "Regex error in parseUsedModels: " . preg_last_error_msg()
+                    'Regex error in parseUsedModels: '.preg_last_error_msg()
                 );
             }
         }
+
         return $used;
     }
 
@@ -368,17 +380,17 @@ class GeneratePagePropTypes extends Command
     {
         // Add null check first
         if (is_null($v)) {
-            return "null";
+            return 'null';
         }
+
         return match (gettype($v)) {
-            "boolean" => "boolean",
-            "integer", "double" => "number", // 'double' is for float/real
-            "string" => "string",
-            "array" => $this->inferArrayType($v),
+            'boolean' => 'boolean',
+            'integer', 'double' => 'number', // 'double' is for float/real
+            'string' => 'string',
+            'array' => $this->inferArrayType($v),
             // Consider object case? PHP objects without specific classes might become arrays/stdClass
-            "object" => "object", // Generic object, might need refinement
-            default
-                => "unknown", // Use 'unknown' instead of 'any' for better type safety
+            'object' => 'object', // Generic object, might need refinement
+            default => 'unknown', // Use 'unknown' instead of 'any' for better type safety
         };
     }
 
@@ -387,7 +399,7 @@ class GeneratePagePropTypes extends Command
         if (empty($arr)) {
             // If it was an empty *model* collection, the heuristic should have caught it.
             // This handles regular empty arrays or cases where heuristic failed.
-            return "unknown[]"; // Use unknown[] instead of any[]
+            return 'unknown[]'; // Use unknown[] instead of any[]
         }
 
         // Check if it's a list (sequential numeric keys starting from 0)
@@ -396,7 +408,7 @@ class GeneratePagePropTypes extends Command
             // Infer type from the first element for potentially homogeneous arrays
             // If array has mixed types, this will only reflect the first element's type.
             // A more robust approach would check all elements, but gets complex.
-            return $this->inferTsType($arr[0]) . "[]";
+            return $this->inferTsType($arr[0]).'[]';
         }
 
         // Associative array -> inline object type
@@ -406,10 +418,11 @@ class GeneratePagePropTypes extends Command
             $propKey = preg_match('/^[a-zA-Z_$][a-zA-Z0-9_$]*$/', $k)
                 ? $k
                 : "'{$k}'";
-            $fields[] = "{$propKey}: " . $this->inferTsType($v);
+            $fields[] = "{$propKey}: ".$this->inferTsType($v);
         }
         // Sort fields alphabetically for consistent output order
         sort($fields);
-        return "{ " . implode("; ", $fields) . " }";
+
+        return '{ '.implode('; ', $fields).' }';
     }
 }

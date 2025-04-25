@@ -6,6 +6,7 @@ use Illuminate\Support\ServiceProvider;
 use JoshCirre\InertiaKit\Console\GenerateInertiaKitRoutes;
 use JoshCirre\InertiaKit\Console\GenerateModelTypes;
 use JoshCirre\InertiaKit\Console\GeneratePagePropTypes;
+use JoshCirre\InertiaKit\Console\InstallInertiaKit;
 
 class InertiaKitServiceProvider extends ServiceProvider
 {
@@ -22,6 +23,7 @@ class InertiaKitServiceProvider extends ServiceProvider
         // Only register commands when running in the console
         if ($this->app->runningInConsole()) {
             $this->commands([
+                InstallInertiaKit::class,
                 GenerateInertiaKitRoutes::class,
                 GenerateModelTypes::class,
                 GeneratePagePropTypes::class,
