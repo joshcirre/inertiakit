@@ -76,6 +76,118 @@ php artisan inertiakit:model-types
 php artisan inertiakit:page-types
 ```
 
+## 🖌️ Defining Page Data & Actions
+
+Each page pairs a React component (.tsx) with a PHP server file (.server.php). In the server file you export:
+- load: a closure that returns an array of props.
+- Named actions: any other key whose value is a closure becomes an Inertia endpoint.
+
+```php
+<?php
+
+use App\Models\Todo;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+return [
+    'load' => function () {
+        return [
+            'todos' => Todo::all(),
+        ];
+    },
+    // -> add actions here:
+    'addTodo' => function (Request $request) {
+        $data = $request->validate(['title' => 'required|string', 'description' => 'required|string']);
+        Auth::user()->todos()->create($data);
+
+        return back();
+    },
+
+    'deleteTodo' => function (Todo $todo) {
+        $todo = Todo::find($todo->id);
+
+        $todo->delete();
+
+        return back();
+    },
+
+    'sayHi' => function () {
+        return 'Hello, World!';
+    }
+];
+```
+
+On the client, InertiaKit injects typed actions and props that you can use:
+
+```ts
+import type { TodosIndexProps } from '@/types/page-props';
+import { Link, useForm, usePage } from '@inertiajs/react';
+
+import { addTodo } from '@/actions/App/Http/Controllers/Generated/Pages/TodosIndexController';
+import InputError from '@/components/input-error';
+import AppLayout from '@/layouts/app-layout';
+import todos from '@/routes/todos';
+import deleteTodo from '@/routes/todos/index/deleteTodo';
+
+type CreateTodoForm = {
+  title: string;
+  description: string;
+};
+
+export default function TodosIndex() {
+  const { props } = usePage<TodosIndexProps>();
+  const form = useForm<CreateTodoForm>();
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    form.submit(addTodo(), {
+      onSuccess: () => form.setData({ title: '', description: '' }),
+      preserveScroll: true,
+    });
+  };
+
+  return (
+    <AppLayout>
+      <h1>My Todos</h1>
+
+      {props.todos.map((todo) => (
+        <div key={todo.id}>
+          <p>{todo.title}</p>
+          <p>{todo.description}</p>
+          <Link href={deleteTodo(todo.id)}>
+            <button type="button">Delete</button>
+          </Link>
+        </div>
+      ))}
+
+      <form onSubmit={submit}>
+        <label htmlFor="title">Title</label>
+        <input
+          id="title"
+          value={form.data.title}
+          onChange={(e) => form.setData('title', e.target.value)}
+        />
+        <InputError message={form.errors.title} />
+
+        <label htmlFor="description">Description</label>
+        <input
+          id="description"
+          value={form.data.description}
+          onChange={(e) => form.setData('description', e.target.value)}
+        />
+        <InputError message={form.errors.description} />
+
+        <button type="submit" disabled={form.processing}>
+          Add Todo
+        </button>
+      </form>
+
+      <Link href={todos.about()}>About todos…</Link>
+    </AppLayout>
+  );
+}
+```
+
 ---
 
 ## 🔄 Automatic Re-generation with Vite
