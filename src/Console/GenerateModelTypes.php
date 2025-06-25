@@ -1,6 +1,6 @@
 <?php
 
-namespace JoshCirre\InertiaKit\Console;
+namespace InertiaKit\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;

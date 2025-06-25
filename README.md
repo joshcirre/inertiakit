@@ -78,43 +78,41 @@ php artisan inertiakit:page-types
 
 ## 🖌️ Defining Page Data & Actions
 
-Each page pairs a React component (.tsx) with a PHP server file (.server.php). In the server file you export:
-- load: a closure that returns an array of props.
-- Named actions: any other key whose value is a closure becomes an Inertia endpoint.
+Each page pairs a React component (.tsx) with a PHP server file (.server.php). Use the fluent ServerPage API to define your page:
 
 ```php
 <?php
 
+use InertiaKit\ServerPage;
 use App\Models\Todo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
-return [
-    'load' => function () {
-        return [
-            'todos' => Todo::all(),
-        ];
-    },
-    // -> add actions here:
-    'addTodo' => function (Request $request) {
-        $data = $request->validate(['title' => 'required|string', 'description' => 'required|string']);
+return ServerPage::make('Todos/Index')
+    ->middleware('auth')
+    ->loader(fn() => [
+        'todos' => Todo::all(),
+    ])
+    ->action('addTodo', function (Request $request) {
+        $data = $request->validate([
+            'title' => 'required|string', 
+            'description' => 'required|string'
+        ]);
         Auth::user()->todos()->create($data);
 
         return back();
-    },
-
-    'deleteTodo' => function (Todo $todo) {
-        $todo = Todo::find($todo->id);
-
+    })
+    ->action('deleteTodo', function (Todo $todo) {
         $todo->delete();
 
         return back();
-    },
-
-    'sayHi' => function () {
+    })
+    ->action('sayHi', function () {
         return 'Hello, World!';
-    }
-];
+    })
+    ->types([
+        'todos' => 'App\\Models\\Todo[]',
+    ]);
 ```
 
 On the client, InertiaKit injects typed actions and props that you can use:

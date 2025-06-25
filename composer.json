@@ -29,7 +29,7 @@
     },
     "autoload": {
         "psr-4": {
-            "JoshCirre\\InertiaKit\\": "src/"
+            "InertiaKit\\": "src/"
         }
     },
     "autoload-dev": {
@@ -49,7 +49,7 @@
     "extra": {
         "laravel": {
             "providers": [
-                "JoshCirre\\InertiaKit\\InertiaKitServiceProvider"
+                "InertiaKit\\InertiaKitServiceProvider"
             ]
         }
     },

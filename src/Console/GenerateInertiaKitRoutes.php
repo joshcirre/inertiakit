@@ -1,6 +1,6 @@
 <?php
 
-namespace JoshCirre\InertiaKit\Console;
+namespace InertiaKit\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use InertiaKit\ServerPage;
 use ReflectionFunction;
 
 class GenerateInertiaKitRoutes extends Command
@@ -150,9 +151,24 @@ class GenerateInertiaKitRoutes extends Command
 
             $component = str_replace(DIRECTORY_SEPARATOR, '/', $base);
             $hasServer = in_array($base, $serverBases, true);
-            $pageArr = $hasServer
-                ? require "{$pagesDir}/{$base}.server.php"
-                : [];
+
+            // Load the server page
+            $serverPage = null;
+            $pageArr = [];
+            $middleware = [];
+
+            if ($hasServer) {
+                $serverPageResult = require "{$pagesDir}/{$base}.server.php";
+
+                // Check if it's the new ServerPage syntax
+                if ($serverPageResult instanceof ServerPage) {
+                    $serverPage = $serverPageResult;
+                    $pageArr = $serverPage->toArray();
+                    $middleware = $serverPage->getMiddleware();
+                } else {
+                    throw new \RuntimeException("Server file {$base}.server.php must return a ServerPage instance");
+                }
+            }
 
             //
             // ─── Controller stub ───
@@ -169,80 +185,100 @@ class GenerateInertiaKitRoutes extends Command
             $stub .= "use App\\Http\\Controllers\\Controller;\n";
             $stub .= "use Illuminate\\Http\\Request;\n";
             $stub .= "use Inertia\\Inertia;\n";
-            // import model classes
-            foreach ($pageArr as $action => $fn) {
-                if ($action === 'load' || ! is_callable($fn)) {
-                    continue;
-                }
-                $ref = new ReflectionFunction($fn);
-                $prm = $ref->getParameters();
-                if (
-                    count($prm) === 1 &&
-                    ($t = $prm[0]->getType()) &&
-                    is_subclass_of($t->getName(), Model::class)
-                ) {
-                    $stub .= "use {$t->getName()};\n";
+
+            // import model classes from actions
+            if ($serverPage) {
+                foreach ($serverPage->getActions() as $action => $fn) {
+                    if (! is_callable($fn)) {
+                        continue;
+                    }
+                    $ref = new ReflectionFunction($fn);
+                    $prm = $ref->getParameters();
+                    if (
+                        count($prm) === 1 &&
+                        ($t = $prm[0]->getType()) &&
+                        is_subclass_of($t->getName(), Model::class)
+                    ) {
+                        $stub .= "use {$t->getName()};\n";
+                    }
                 }
             }
             $stub .= "\nclass {$ctrlName} extends Controller\n{\n";
             // index()
             $stub .= "    public function index()\n    {\n";
-            if ($hasServer) {
-                $stub .= "        \$page  = require resource_path('js/pages/{$base}.server.php');\n";
-                $stub .= "        \$props = (\$page['load'] ?? fn()=>[])();\n";
+            if ($hasServer && $serverPage) {
+                $stub .= "        \$serverPage = require resource_path('js/pages/{$base}.server.php');\n";
+                $stub .= "        \$loader = \$serverPage->getLoader();\n";
+                $stub .= "        \$props = \$loader ? \$loader() : [];\n";
             } else {
                 $stub .= "        \$props = [];\n";
             }
             $stub .= "        \$actions = [];\n";
+
             // only non-model actions
-            foreach ($pageArr as $action => $fn) {
-                if ($action === 'load' || ! is_callable($fn)) {
-                    continue;
+            if ($serverPage) {
+                foreach ($serverPage->getActions() as $action => $fn) {
+                    if (! is_callable($fn)) {
+                        continue;
+                    }
+                    $ref = new ReflectionFunction($fn);
+                    $prm = $ref->getParameters();
+                    $isModel =
+                        count($prm) === 1 &&
+                        ($t = $prm[0]->getType()) &&
+                        is_subclass_of($t->getName(), Model::class);
+                    if ($isModel) {
+                        continue;
+                    }
+                    $stub .= "        \$actions['{$action}'] = route('{$routeName}.{$action}');\n";
                 }
-                $ref = new ReflectionFunction($fn);
-                $prm = $ref->getParameters();
-                $isModel =
-                    count($prm) === 1 &&
-                    ($t = $prm[0]->getType()) &&
-                    is_subclass_of($t->getName(), Model::class);
-                if ($isModel) {
-                    continue;
-                }
-                $stub .= "        \$actions['{$action}'] = route('{$routeName}.{$action}');\n";
             }
+
             $stub .= "        \$props['actions'] = \$actions;\n";
-            $stub .= "        return Inertia::render('{$component}', \$props);\n";
+
+            // Get component from ServerPage or use file path
+            if ($hasServer && $serverPage) {
+                $pageComponent = $serverPage->getComponent();
+            } else {
+                $pageComponent = $component;
+            }
+
+            $stub .= "        return Inertia::render('{$pageComponent}', \$props);\n";
             $stub .= "    }\n\n";
 
             // each action method
-            foreach ($pageArr as $action => $fn) {
-                if ($action === 'load' || ! is_callable($fn)) {
-                    continue;
-                }
-                $ref = new ReflectionFunction($fn);
-                $prm = $ref->getParameters();
-                if (
-                    count($prm) === 1 &&
-                    ($t = $prm[0]->getType()) &&
-                    is_subclass_of($t->getName(), Model::class)
-                ) {
-                    // DELETE + route-model
-                    $pn = $prm[0]->getName();
-                    $ms = class_basename($t->getName());
-                    $stub .= "    public function {$action}({$ms} \${$pn})\n    {\n";
-                    $stub .= "        \$page = require resource_path('js/pages/{$base}.server.php');\n";
-                    $stub .= "        \$res  = \$page['{$action}'](\${$pn});\n";
-                    $stub .=
-                        "        return \$res instanceof \\Inertia\\Response ? \$res : redirect()->back();\n";
-                    $stub .= "    }\n\n";
-                } else {
-                    // POST with Request
-                    $stub .= "    public function {$action}(Request \$request)\n    {\n";
-                    $stub .= "        \$page = require resource_path('js/pages/{$base}.server.php');\n";
-                    $stub .= "        \$res  = \$page['{$action}'](\$request);\n";
-                    $stub .=
-                        "        return \$res instanceof \\Inertia\\Response ? \$res : redirect()->back();\n";
-                    $stub .= "    }\n\n";
+            if ($serverPage) {
+                foreach ($serverPage->getActions() as $action => $fn) {
+                    if (! is_callable($fn)) {
+                        continue;
+                    }
+                    $ref = new ReflectionFunction($fn);
+                    $prm = $ref->getParameters();
+                    if (
+                        count($prm) === 1 &&
+                        ($t = $prm[0]->getType()) &&
+                        is_subclass_of($t->getName(), Model::class)
+                    ) {
+                        // DELETE + route-model
+                        $pn = $prm[0]->getName();
+                        $ms = class_basename($t->getName());
+                        $stub .= "    public function {$action}({$ms} \${$pn})\n    {\n";
+                        $stub .= "        \$serverPage = require resource_path('js/pages/{$base}.server.php');\n";
+                        $stub .= "        \$actions = \$serverPage->getActions();\n";
+                        $stub .= "        \$res = \$actions['{$action}'](\${$pn});\n";
+                        $stub .=
+                            "        return \$res instanceof \\Inertia\\Response ? \$res : redirect()->back();\n";
+                        $stub .= "    }\n\n";
+                    } else {
+                        // POST with Request
+                        $stub .= "    public function {$action}(Request \$request)\n    {\n";
+                        $stub .= "        \$serverPage = require resource_path('js/pages/{$base}.server.php');\n";
+                        $stub .= "        \$actions = \$serverPage->getActions();\n";
+                        $stub .= "        \$res = \$actions['{$action}'](\$request);\n";
+                        $stub .=
+                            "        return \$res instanceof \\Inertia\\Response ? \$res : redirect()->back();\n";
+                        $stub .= "    }\n\n";
+                    }
                 }
             }
             $stub .= "}\n";
@@ -253,27 +289,34 @@ class GenerateInertiaKitRoutes extends Command
             //
             // ─── Routes file ───
             //
+            // Determine middleware
+            $middlewareStr = ! empty($middleware)
+                ? "['web', '".implode("', '", $middleware)."']"
+                : "'web'";
+
             // GET index
-            $php .= "Route::middleware('web')->get('{$uri}', [{$fullClass}::class,'index'])->name('{$routeName}');\n";
+            $php .= "Route::middleware({$middlewareStr})->get('{$uri}', [{$fullClass}::class,'index'])->name('{$routeName}');\n";
 
             // action routes
-            foreach ($pageArr as $action => $fn) {
-                if ($action === 'load' || ! is_callable($fn)) {
-                    continue;
-                }
-                $ref = new ReflectionFunction($fn);
-                $prm = $ref->getParameters();
-                if (
-                    count($prm) === 1 &&
-                    ($t = $prm[0]->getType()) &&
-                    is_subclass_of($t->getName(), Model::class)
-                ) {
-                    $pn = $prm[0]->getName();
-                    $php .= "Route::middleware('web')->delete('{$uri}/{{$pn}}', [{$fullClass}::class,'{$action}'])
-                          ->name('{$routeName}.{$action}');\n";
-                } else {
-                    $php .= "Route::middleware('web')->post('{$uri}/{$action}', [{$fullClass}::class,'{$action}'])
-                          ->name('{$routeName}.{$action}');\n";
+            if ($serverPage) {
+                foreach ($serverPage->getActions() as $action => $fn) {
+                    if (! is_callable($fn)) {
+                        continue;
+                    }
+                    $ref = new ReflectionFunction($fn);
+                    $prm = $ref->getParameters();
+                    if (
+                        count($prm) === 1 &&
+                        ($t = $prm[0]->getType()) &&
+                        is_subclass_of($t->getName(), Model::class)
+                    ) {
+                        $pn = $prm[0]->getName();
+                        $php .= "Route::middleware({$middlewareStr})->delete('{$uri}/{{$pn}}', [{$fullClass}::class,'{$action}'])
+                              ->name('{$routeName}.{$action}');\n";
+                    } else {
+                        $php .= "Route::middleware({$middlewareStr})->post('{$uri}/{$action}', [{$fullClass}::class,'{$action}'])
+                              ->name('{$routeName}.{$action}');\n";
+                    }
                 }
             }
             $php .= "\n";

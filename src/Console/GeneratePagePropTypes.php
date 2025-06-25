@@ -1,12 +1,13 @@
 <?php
 
-namespace JoshCirre\InertiaKit\Console;
+namespace InertiaKit\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use InertiaKit\ServerPage;
 use ReflectionClass; // Needed for checking if a class is a Model
 use Symfony\Component\Console\Output\OutputInterface; // Import Throwable
 use Throwable; // For verbosity levels
@@ -72,7 +73,7 @@ class GeneratePagePropTypes extends Command
                 $pageLoader = function ($__path) {
                     return require $__path;
                 };
-                $page = $pageLoader($file->getRealPath());
+                $result = $pageLoader($file->getRealPath());
             } catch (Throwable $e) {
                 $this->warn(
                     "Skipping {$relativePath}: Failed to require file. Error: ".
@@ -82,25 +83,33 @@ class GeneratePagePropTypes extends Command
                 continue;
             }
 
-            if (! is_array($page)) {
+            // Check if it's the new ServerPage syntax
+            $serverPage = null;
+            $page = [];
+
+            if ($result instanceof ServerPage) {
+                $serverPage = $result;
+                $page = $serverPage->toArray();
+
+                // Check if it has a loader
+                if (! $serverPage->getLoader()) {
+                    $this->line(
+                        "Skipping {$relativePath}: ServerPage has no loader defined.",
+                        verbosity: OutputInterface::VERBOSITY_VERBOSE
+                    );
+
+                    continue;
+                }
+            } else {
                 $this->warn(
-                    "Skipping {$relativePath}: File did not return an array."
-                );
-
-                continue;
-            }
-
-            if (! isset($page['load']) || ! is_callable($page['load'])) {
-                $this->line(
-                    "Skipping {$relativePath}: No callable 'load' key found.",
-                    verbosity: OutputInterface::VERBOSITY_VERBOSE
+                    "Skipping {$relativePath}: File must return a ServerPage instance."
                 );
 
                 continue;
             }
 
             // --- Get explicit types first (Optional but recommended) ---
-            $explicitTypes = $page['types'] ?? [];
+            $explicitTypes = $serverPage->getTypes();
             $meta = [];
             foreach ($explicitTypes as $key => $typeHint) {
                 $propName = Str::camel($key);
@@ -136,11 +145,12 @@ class GeneratePagePropTypes extends Command
             // --- End explicit types ---
 
             try {
-                // Execute the load function to get props
-                $props = $page['load']();
+                // Execute the loader function to get props
+                $loader = $serverPage->getLoader();
+                $props = $loader ? $loader() : [];
             } catch (Throwable $e) {
                 $this->warn(
-                    "Skipping {$relativePath}: load() threw ".
+                    "Skipping {$relativePath}: loader() threw ".
                         get_class($e).
                         ': '.
                         $e->getMessage()
@@ -219,6 +229,17 @@ class GeneratePagePropTypes extends Command
 
             // Build the TS interface body
             $body = "export interface {$interfaceName} extends SharedData {\n";
+
+            // Add actions property if there are any actions
+            $actions = $serverPage->getActions();
+            if (! empty($actions)) {
+                $body .= "  actions: {\n";
+                foreach ($actions as $actionName => $actionCallback) {
+                    $body .= "    {$actionName}: string;\n";
+                }
+                $body .= "  };\n";
+            }
+
             // Iterate using the original prop structure keys but use normalized values for inference
             foreach ($props as $key => $originalValue) {
                 $propName = Str::camel($key); // Ensure consistency

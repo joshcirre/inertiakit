@@ -1,12 +1,12 @@
 <?php
 
-namespace JoshCirre\InertiaKit;
+namespace InertiaKit;
 
 use Illuminate\Support\ServiceProvider;
-use JoshCirre\InertiaKit\Console\GenerateInertiaKitRoutes;
-use JoshCirre\InertiaKit\Console\GenerateModelTypes;
-use JoshCirre\InertiaKit\Console\GeneratePagePropTypes;
-use JoshCirre\InertiaKit\Console\InstallInertiaKit;
+use InertiaKit\Console\GenerateInertiaKitRoutes;
+use InertiaKit\Console\GenerateModelTypes;
+use InertiaKit\Console\GeneratePagePropTypes;
+use InertiaKit\Console\InstallInertiaKit;
 
 class InertiaKitServiceProvider extends ServiceProvider
 {
