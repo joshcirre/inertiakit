@@ -21,7 +21,7 @@ It auto-generates:
 
 1. **Require the package**
    ```bash
-   composer require joshcirre/inertiakit:"^0.0.10-alpha"
+   composer require joshcirre/inertiakit:"^0.0.11-alpha"
    ```
 
 2. **Install the package**
