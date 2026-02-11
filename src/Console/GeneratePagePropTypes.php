@@ -7,10 +7,13 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use InertiaKit\Prop;
 use InertiaKit\ServerPage;
-use ReflectionClass; // Needed for checking if a class is a Model
-use Symfony\Component\Console\Output\OutputInterface; // Import Throwable
-use Throwable; // For verbosity levels
+use ReflectionClass;
+use ReflectionFunction;
+use ReflectionNamedType;
+use Symfony\Component\Console\Output\OutputInterface;
+use Throwable;
 
 class GeneratePagePropTypes extends Command
 {
@@ -111,6 +114,7 @@ class GeneratePagePropTypes extends Command
             // --- Get explicit types first (Optional but recommended) ---
             $explicitTypes = $serverPage->getTypes();
             $meta = [];
+            $optionalProps = []; // Track which props are optional (defer, optional)
             foreach ($explicitTypes as $key => $typeHint) {
                 $propName = Str::camel($key);
                 if (Str::endsWith($typeHint, '[]')) {
@@ -121,7 +125,7 @@ class GeneratePagePropTypes extends Command
                     ) {
                         $modelName = class_basename($className);
                         $meta[$propName] = "{$modelName}[]";
-                        $importsMeta[$modelName] = './models'; // Adjust if models types are elsewhere
+                        $importsMeta[$modelName] = './models';
                     } else {
                         $this->warn(
                             "Invalid model class in type hint '{$typeHint}' for key '{$key}' in {$relativePath}"
@@ -134,7 +138,7 @@ class GeneratePagePropTypes extends Command
                 ) {
                     $modelName = class_basename($typeHint);
                     $meta[$propName] = $modelName;
-                    $importsMeta[$modelName] = './models'; // Adjust if models types are elsewhere
+                    $importsMeta[$modelName] = './models';
                 } else {
                     $this->warn(
                         "Invalid model class in type hint '{$typeHint}' for key '{$key}' in {$relativePath}"
@@ -144,88 +148,139 @@ class GeneratePagePropTypes extends Command
             }
             // --- End explicit types ---
 
-            try {
-                // Execute the loader function to get props
-                $loader = $serverPage->getLoader();
-                $props = $loader ? $loader() : [];
-            } catch (Throwable $e) {
-                $this->warn(
-                    "Skipping {$relativePath}: loader() threw ".
-                        get_class($e).
-                        ': '.
-                        $e->getMessage()
-                );
-
-                continue;
-            }
-            if (! is_array($props)) {
-                $this->warn(
-                    "Skipping {$relativePath}: load() did not return an array"
-                );
-
-                continue;
+            // Determine if loader has parameters (route-model binding)
+            $loader = $serverPage->getLoader();
+            $loaderHasParams = false;
+            if ($loader) {
+                $loaderRef = new ReflectionFunction($loader);
+                foreach ($loaderRef->getParameters() as $param) {
+                    $paramType = $param->getType();
+                    if ($paramType instanceof ReflectionNamedType && ! $paramType->isBuiltin()) {
+                        if (is_subclass_of($paramType->getName(), Model::class)) {
+                            $loaderHasParams = true;
+                            break;
+                        }
+                    }
+                }
             }
 
-            // Detect or infer model-based props
-            $propsForInference = []; // Store original values before normalization
-            foreach ($props as $key => $value) {
-                $propName = Str::camel($key);
-                $propsForInference[$propName] = $value; // Store with camelCase key
+            // Hybrid type generation: parameterized loaders use types() only
+            $props = null;
+            if ($loaderHasParams) {
+                if (empty($explicitTypes)) {
+                    $this->warn(
+                        "Skipping {$relativePath}: Parameterized loader has no explicit ->types(). Add ->types() to enable type generation."
+                    );
 
-                // Skip if already handled by explicit types
-                if (isset($meta[$propName])) {
+                    continue;
+                }
+                // Use only explicit types, skip runtime execution
+                $this->line(
+                    "Using explicit types for parameterized loader in {$relativePath}.",
+                    verbosity: OutputInterface::VERBOSITY_VERBOSE
+                );
+            } else {
+                try {
+                    $props = $loader ? $loader() : [];
+                } catch (Throwable $e) {
+                    $this->warn(
+                        "Skipping {$relativePath}: loader() threw ".
+                            get_class($e).
+                            ': '.
+                            $e->getMessage()
+                    );
+
+                    continue;
+                }
+                if (! is_array($props)) {
+                    $this->warn(
+                        "Skipping {$relativePath}: load() did not return an array"
+                    );
+
                     continue;
                 }
 
-                if ($value instanceof Model) {
-                    $modelName = class_basename(get_class($value));
-                    $meta[$propName] = $modelName;
-                    $importsMeta[$modelName] = './models';
-                } elseif ($value instanceof EloquentCollection) {
-                    $first = $value->first();
-                    if ($first instanceof Model) {
-                        // Collection is not empty, direct detection works
-                        $modelName = class_basename(get_class($first));
-                        $meta[$propName] = "{$modelName}[]";
-                        $importsMeta[$modelName] = './models';
-                    } else {
-                        // --- Heuristic for Empty Collections ---
-                        // Try to guess based on prop name and used models
-                        $singularKey = Str::singular($key); // e.g., "todos" -> "todo"
-                        $studlyKey = Str::studly($singularKey); // e.g., "todo" -> "Todo"
+                // Detect or infer model-based props, including Prop instances
+                foreach ($props as $key => $value) {
+                    $propName = Str::camel($key);
 
-                        if (isset($usedModels[$studlyKey])) {
-                            $modelName = $studlyKey; // Use the base name found in use statements
+                    // Handle Prop instances
+                    if ($value instanceof Prop) {
+                        $propType = $value->getType();
+                        if (in_array($propType, [Prop::TYPE_DEFER, Prop::TYPE_OPTIONAL])) {
+                            $optionalProps[$propName] = true;
+                        }
+
+                        // Skip if already handled by explicit types
+                        if (isset($meta[$propName])) {
+                            continue;
+                        }
+
+                        // Resolve the inner callback for type inference
+                        try {
+                            $innerValue = $value->resolve();
+                        } catch (Throwable $e) {
+                            $this->warn(
+                                "Could not resolve Prop '{$key}' in {$relativePath} for type inference: ".$e->getMessage()
+                            );
+                            $meta[$propName] = 'unknown';
+
+                            continue;
+                        }
+
+                        if ($innerValue instanceof Model) {
+                            $modelName = class_basename(get_class($innerValue));
+                            $meta[$propName] = $modelName;
+                            $importsMeta[$modelName] = './models';
+                        } elseif ($innerValue instanceof EloquentCollection) {
+                            $first = $innerValue->first();
+                            if ($first instanceof Model) {
+                                $modelName = class_basename(get_class($first));
+                                $meta[$propName] = "{$modelName}[]";
+                                $importsMeta[$modelName] = './models';
+                            }
+                        }
+                        // Let it fall through to normalizeForTsInference for non-model types
+
+                        continue;
+                    }
+
+                    // Skip if already handled by explicit types
+                    if (isset($meta[$propName])) {
+                        continue;
+                    }
+
+                    if ($value instanceof Model) {
+                        $modelName = class_basename(get_class($value));
+                        $meta[$propName] = $modelName;
+                        $importsMeta[$modelName] = './models';
+                    } elseif ($value instanceof EloquentCollection) {
+                        $first = $value->first();
+                        if ($first instanceof Model) {
+                            $modelName = class_basename(get_class($first));
                             $meta[$propName] = "{$modelName}[]";
                             $importsMeta[$modelName] = './models';
-                            $this->line(
-                                "Inferred type '{$modelName}[]' for empty collection '{$key}' in {$relativePath} based on use statements.",
-                                verbosity: OutputInterface::VERBOSITY_VERBOSE
-                            );
                         } else {
-                            // Cannot infer, fallback needed later
-                            $this->warn(
-                                "Could not infer type for empty collection '{$key}' in {$relativePath}. Falling back to 'any[]'. Consider adding an explicit type hint or seeding data."
-                            );
+                            $singularKey = Str::singular($key);
+                            $studlyKey = Str::studly($singularKey);
+
+                            if (isset($usedModels[$studlyKey])) {
+                                $modelName = $studlyKey;
+                                $meta[$propName] = "{$modelName}[]";
+                                $importsMeta[$modelName] = './models';
+                                $this->line(
+                                    "Inferred type '{$modelName}[]' for empty collection '{$key}' in {$relativePath} based on use statements.",
+                                    verbosity: OutputInterface::VERBOSITY_VERBOSE
+                                );
+                            } else {
+                                $this->warn(
+                                    "Could not infer type for empty collection '{$key}' in {$relativePath}. Falling back to 'any[]'. Consider adding an explicit type hint or seeding data."
+                                );
+                            }
                         }
-                        // --- End Heuristic ---
                     }
                 }
-                // Optional: Add heuristic for null values that might be unloaded relations
-                // elseif ($value === null) {
-                //     $studlyKey = Str::studly($key);
-                //     if (isset($usedModels[$studlyKey])) {
-                //         $modelName = $studlyKey;
-                //         $meta[$propName] = "{$modelName} | null"; // Or just ModelName if always expected
-                //         $importsMeta[$modelName] = './models';
-                //         $this->line("Inferred type '{$modelName} | null' for null value '{$key}' in {$relativePath} based on use statements.", verbosity: OutputInterface::VERBOSITY_VERBOSE);
-                //     }
-                // }
             }
-
-            // Normalize remaining Models/Collections for basic type inference
-            // We need a recursive function that handles the original structure
-            $normalizedProps = $this->normalizeForTsInference($props);
 
             // Build the TS interface body
             $body = "export interface {$interfaceName} extends SharedData {\n";
@@ -240,30 +295,53 @@ class GeneratePagePropTypes extends Command
                 $body .= "  };\n";
             }
 
-            // Iterate using the original prop structure keys but use normalized values for inference
-            foreach ($props as $key => $originalValue) {
-                $propName = Str::camel($key); // Ensure consistency
-
-                if (isset($meta[$propName])) {
-                    // Type determined by explicit hint, detection, or heuristic
-                    $body .= "  {$propName}: {$meta[$propName]};\n";
-                } else {
-                    // Fallback to basic inference using the normalized value
-                    $normalizedValue = $normalizedProps[$key] ?? $originalValue; // Use normalized value if available
-                    $tsType = $this->inferTsType($normalizedValue);
-
-                    // Add a warning comment if we fell back for an empty collection
-                    if (
-                        $originalValue instanceof EloquentCollection &&
-                        $originalValue->isEmpty() &&
-                        ! isset($meta[$propName])
-                    ) {
-                        $body .= "  {$propName}: any[]; // WARN: Could not infer type for empty collection\n";
+            if ($props !== null) {
+                // Normalize for TS inference, resolving Prop instances first
+                $resolvedProps = [];
+                foreach ($props as $key => $value) {
+                    if ($value instanceof Prop) {
+                        try {
+                            $resolvedProps[$key] = $value->resolve();
+                        } catch (Throwable) {
+                            $resolvedProps[$key] = null;
+                        }
                     } else {
-                        $body .= "  {$propName}: {$tsType};\n";
+                        $resolvedProps[$key] = $value;
                     }
                 }
+                $normalizedProps = $this->normalizeForTsInference($resolvedProps);
+
+                foreach ($props as $key => $originalValue) {
+                    $propName = Str::camel($key);
+                    $isOptional = isset($optionalProps[$propName]);
+                    $optionalMarker = $isOptional ? '?' : '';
+
+                    if (isset($meta[$propName])) {
+                        $body .= "  {$propName}{$optionalMarker}: {$meta[$propName]};\n";
+                    } else {
+                        $normalizedValue = $normalizedProps[$key] ?? null;
+                        $tsType = $this->inferTsType($normalizedValue);
+
+                        if (
+                            $originalValue instanceof EloquentCollection &&
+                            $originalValue->isEmpty() &&
+                            ! isset($meta[$propName])
+                        ) {
+                            $body .= "  {$propName}{$optionalMarker}: any[]; // WARN: Could not infer type for empty collection\n";
+                        } else {
+                            $body .= "  {$propName}{$optionalMarker}: {$tsType};\n";
+                        }
+                    }
+                }
+            } else {
+                // Parameterized loader — use only explicit types
+                foreach ($meta as $propName => $tsType) {
+                    $isOptional = isset($optionalProps[$propName]);
+                    $optionalMarker = $isOptional ? '?' : '';
+                    $body .= "  {$propName}{$optionalMarker}: {$tsType};\n";
+                }
             }
+
             $body .= "  [key: string]: unknown; // Allow additional props\n";
             $body .= "}\n\n";
 

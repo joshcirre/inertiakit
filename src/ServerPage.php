@@ -42,9 +42,47 @@ class ServerPage
 
     public function action(string $name, Closure $callback): static
     {
-        $this->actions[$name] = $callback;
+        $this->actions[$name] = ['callback' => $callback, 'method' => null];
 
         return $this;
+    }
+
+    public function post(string $name, Closure $callback): static
+    {
+        $this->actions[$name] = ['callback' => $callback, 'method' => 'post'];
+
+        return $this;
+    }
+
+    public function put(string $name, Closure $callback): static
+    {
+        $this->actions[$name] = ['callback' => $callback, 'method' => 'put'];
+
+        return $this;
+    }
+
+    public function patch(string $name, Closure $callback): static
+    {
+        $this->actions[$name] = ['callback' => $callback, 'method' => 'patch'];
+
+        return $this;
+    }
+
+    public function delete(string $name, Closure $callback): static
+    {
+        $this->actions[$name] = ['callback' => $callback, 'method' => 'delete'];
+
+        return $this;
+    }
+
+    public function getActionCallback(string $name): ?Closure
+    {
+        return $this->actions[$name]['callback'] ?? null;
+    }
+
+    public function getActionMethod(string $name): ?string
+    {
+        return $this->actions[$name]['method'] ?? null;
     }
 
     public function types(array $types): static
@@ -71,6 +109,14 @@ class ServerPage
 
     public function getActions(): array
     {
+        return array_map(
+            fn (array $action) => $action['callback'],
+            $this->actions
+        );
+    }
+
+    public function getRawActions(): array
+    {
         return $this->actions;
     }
 
@@ -87,8 +133,8 @@ class ServerPage
             $array['load'] = $this->loaderCallback;
         }
 
-        foreach ($this->actions as $name => $callback) {
-            $array[$name] = $callback;
+        foreach ($this->actions as $name => $action) {
+            $array[$name] = $action['callback'];
         }
 
         if (! empty($this->types)) {

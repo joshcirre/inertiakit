@@ -1,15 +1,18 @@
 <?php
 
-use InertiaKit\ServerPage;
 use App\Models\Todo;
 use Illuminate\Http\Request;
+use InertiaKit\Prop;
+use InertiaKit\ServerPage;
 
 return ServerPage::make('Todos/Index')
     ->middleware('auth')
-    ->loader(fn(): array => [
+    ->loader(fn (): array => [
         'todos' => Todo::all(),
+        'completedCount' => Prop::defer(fn () => Todo::where('completed', true)->count()),
+        'tags' => Prop::merge(fn () => Todo::pluck('tag')->unique()->values()),
     ])
-    ->action('addTodo', function (Request $request) {
+    ->post('addTodo', function (Request $request) {
         $todo = Todo::create(
             $request->validate([
                 'title' => 'required|string',
@@ -21,7 +24,7 @@ return ServerPage::make('Todos/Index')
             'todo' => $todo,
         ];
     })
-    ->action('updateTodo', function (Todo $todo, Request $request) {
+    ->put('updateTodo', function (Todo $todo, Request $request) {
         $todo->update(
             $request->validate([
                 'title' => 'string',
@@ -33,7 +36,7 @@ return ServerPage::make('Todos/Index')
             'todo' => $todo,
         ];
     })
-    ->action('deleteTodo', function (Todo $todo) {
+    ->delete('deleteTodo', function (Todo $todo) {
         $todo->delete();
 
         return [
